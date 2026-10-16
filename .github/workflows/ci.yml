@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Go / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify formatting
+        run: test -z "$(gofmt -l cmd internal)"
+      - name: Verify module checksums
+        run: go mod verify
+      - name: Build without CGO
+        run: go build ./cmd/obsidian-search
+        env:
+          CGO_ENABLED: '0'
+      - name: Static analysis
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Race detector
+        run: go test -race ./...
+      - name: Vulnerability analysis
+        if: runner.os == 'Linux'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        env:
+          GOTOOLCHAIN: local
